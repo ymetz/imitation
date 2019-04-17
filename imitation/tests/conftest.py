@@ -15,5 +15,5 @@ def pytest_addoption(parser):
 
 def pytest_runtest_setup(item):
     if 'expensive' in item.keywords and not item.config.getoption(
-            "--expensive"):
+            "--expensive", False):
         pytest.skip("Skipping test unless --expensive is flagged")
