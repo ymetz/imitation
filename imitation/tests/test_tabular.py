@@ -2,9 +2,9 @@
 
 import numpy as np
 
-from imitation.model_env import RandomMDP, ModelBasedEnv
-from imitation.tabular_irl import mce_partition_fh, mce_occupancy_measures, \
-    maxent_irl, SGD, AMSGrad
+from imitation.model_env import ModelBasedEnv, RandomMDP
+from imitation.tabular_irl import (SGD, AMSGrad, maxent_irl,
+                                   mce_occupancy_measures, mce_partition_fh)
 
 # import pytest
 

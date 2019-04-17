@@ -1,10 +1,11 @@
 import argparse
 
 import gin.tf
-import imitation.util as util
 import ray
 from ray import tune
 import tensorflow as tf
+
+import imitation.util as util
 
 
 def make_PPO2(env_name):

@@ -3,10 +3,9 @@ are handy when you want to perform exact maxent policy optimisation."""
 
 import abc
 
-import numpy as np
-
 import gym
 from gym import spaces
+import numpy as np
 
 
 class ModelBasedEnv(gym.Env, metaclass=abc.ABCMeta):
