@@ -212,3 +212,50 @@ def test_policy_om_reasonable_mdp():
     # opt = AMSGrad(init_weights, alpha=1e-1)
     final_weights, final_counts = maxent_irl(
         mdp, opt, demo_counts, linf_eps=1e-2)
+
+
+def test_optimisers():
+    rng = np.random.RandomState(42)
+    # make a positive definite Q
+    Q = rng.randn(10, 10)
+    Q = Q.T @ Q + 1e-5 * np.eye(10)
+    v = rng.randn(10)
+
+    def f(x):
+        return 0.5 * x.T @ Q @ x + np.dot(v, x)
+
+    def df(x):
+        return Q @ x + v
+
+    # also find the solution
+    Qinv = np.linalg.inv(Q)
+    solution = -Qinv @ v
+    opt_value = f(solution)
+
+    # start in some place far from minimum of f(x)
+    init_x = 5 * rng.randn(10) + 2
+    sgd = SGD(init_x, alpha=1e-2)
+    # amsgrad typically requires (and can deal with) a higher step size
+    agd = AMSGrad(init_x, alpha=1e-1)
+    for optimiser in [sgd, agd]:
+        x = init_x
+        grad = df(x)
+        val = f(x)
+        assert np.linalg.norm(grad) > 1
+        assert np.abs(val) > 1
+        print('Initial: val=%.3f, grad=%.3f' % (val, np.linalg.norm(grad)))
+        for it in range(50000):
+            optimiser.step(grad)
+            x = optimiser.current_params
+            grad = df(x)
+            # natural gradient: grad = Qinv @ x
+            val = f(x)
+            if 0 == (it % 50):
+                print('Value %.3f (grad %.3f) after %d steps' %
+                      (val, np.linalg.norm(grad), it))
+            if np.linalg.norm(grad) < 1e-4:
+                break
+        # pretty loose because we use big step sizes
+        assert np.linalg.norm(grad) < 1e-2
+        assert np.sum(np.abs(x - solution)) < 1e-2
+        assert np.abs(val - opt_value) < 1e-2

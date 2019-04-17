@@ -119,9 +119,11 @@ def maxent_irl(env, optimiser, feature_counts, linf_eps=1e-5):
         grad = feature_counts - pol_feature_counts
         grad = -grad
         delta = np.max(np.abs(grad))
-        print(
-            'Feature count error@iter % 3d: %f (params=%s, grad=%s, pol_counts=%s)'
-            % (t, delta, rew_params, grad, pol_feature_counts))
+        if 0 == (t % 500):
+            print('Feature count error@iter % 3d: %f (||params||=%f, '
+                  '||grad||=%f, ||fcount||=%f)' %
+                  (t, delta, np.linalg.norm(rew_params), np.linalg.norm(grad),
+                   np.linalg.norm(pol_feature_counts)))
         optimiser.step(grad)
         t += 1
     return optimiser.current_params, pol_feature_counts
