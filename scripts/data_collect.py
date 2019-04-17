@@ -3,28 +3,27 @@ import argparse
 import gin.tf
 import ray
 from ray import tune
-import tensorflow as tf
 
-import imitation.util as util
+# import imitation.util as util
 
 
-def make_PPO2(env_name):
-    """
-    Hyperparameters and a vectorized environment for training a PPO2 expert.
-    """
-    env = util.make_vec_env(env_name, 8)
-    # Didn't look at rl-baselines-zoo for this, but these hyperparameters
-    # seem ok. They aren't great though.
-    policy = stable_baselines.PPO2(
-        util.FeedForward32Policy,
-        env,
-        verbose=0,
-        tensorboard_log="data/tensorboard",
-        learning_rate=3e-3,
-        nminibatches=32,
-        noptepochs=10,
-        n_steps=2048)
-    return policy
+# def make_PPO2(env_name):
+#     """
+#     Hyperparameters and a vectorized environment for training a PPO2 expert.
+#     """
+#     env = util.make_vec_env(env_name, 8)
+#     # Didn't look at rl-baselines-zoo for this, but these hyperparameters
+#     # seem ok. They aren't great though.
+#     policy = stable_baselines.PPO2(
+#         util.FeedForward32Policy,
+#         env,
+#         verbose=0,
+#         tensorboard_log="data/tensorboard",
+#         learning_rate=3e-3,
+#         nminibatches=32,
+#         noptepochs=10,
+#         n_steps=2048)
+#     return policy
 
 
 @gin.configurable
