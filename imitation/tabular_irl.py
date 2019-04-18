@@ -90,7 +90,7 @@ def maxent_irl(env, optimiser, feature_counts, linf_eps=1e-5):
         grad = feature_counts - pol_feature_counts
         grad = -grad
         delta = np.max(np.abs(grad))
-        if 0 == (t % 500):
+        if 0 == (t % 10):  # if 0 == (t % 500):
             print('Feature count error@iter % 3d: %f (||params||=%f, '
                   '||grad||=%f, ||fcount||=%f)' %
                   (t, delta, np.linalg.norm(rew_params), np.linalg.norm(grad),
@@ -100,7 +100,40 @@ def maxent_irl(env, optimiser, feature_counts, linf_eps=1e-5):
     return optimiser.current_params, pol_feature_counts
 
 
-def maxent_irl_ng(env, optimiser, feature_counts, linf_eps=1e-5):
+def _get_grad_r_from_trajectories(env, good_pi, ntraj=100):
+    traj_grads = []
+    for i in range(ntraj):
+        feats = env.reset()
+        done = False
+        t = 0
+        while not done:
+            policy_dist = good_pi[t, env.cur_state]
+            assert np.all(np.isfinite(policy_dist)) \
+                and np.sum(policy_dist) > 1e-5, good_pi
+            if np.sum(policy_dist) < 1:
+                # TODO: replace action randomness with something seeded,
+                # somehow
+                no_act_prob = 1 - np.sum(policy_dist)
+                if np.random.random() < no_act_prob:
+                    # no action, ends sequence
+                    done = True
+                    break
+            policy_dist = policy_dist / np.sum(policy_dist)
+            assert np.all(np.isfinite(policy_dist)) \
+                and np.sum(policy_dist) > 1e-5, policy_dist
+            action = np.random.choice(np.arange(env.n_actions), p=policy_dist)
+            step_feats, _, done, _ = env.step(action)
+            feats = feats + step_feats
+            t += 1
+        traj_grads.append(feats)
+    return traj_grads
+
+
+def maxent_irl_ng(env,
+                  optimiser,
+                  feature_counts,
+                  linf_eps=1e-5,
+                  constrained_update=False):
     """Natural gradient IRL."""
     obs_mat = env.observation_matrix
     delta = linf_eps + 1
@@ -108,17 +141,32 @@ def maxent_irl_ng(env, optimiser, feature_counts, linf_eps=1e-5):
     while delta > linf_eps:
         rew_params = optimiser.current_params
         predicted_r = obs_mat @ rew_params
-        _, visitations = mce_occupancy_measures(env, R=predicted_r)
+        _, _, pi = mce_partition_fh(env=env, R=predicted_r)
+        _, visitations = mce_occupancy_measures(env, R=predicted_r, pi=pi)
         pol_feature_counts = visitations @ obs_mat
+        # TODO: this is a shit way of calculating the Fisher; I should be able
+        # to get it exact! If I can't get it exact then I should at least
+        # figure out some way of decreasing the variance of this estimate
+        # (control variates? CRN? etc.)
+        traj_grads = _get_grad_r_from_trajectories(env, pi, ntraj=100)
+        outer_prod_things = (t - pol_feature_counts for t in traj_grads)
+        fim = np.mean([np.outer(m, m) for m in outer_prod_things], axis=0)
         grad = feature_counts - pol_feature_counts
         grad = -grad
+        step = np.linalg.solve(fim, grad)
+        if constrained_update:
+            # TODO: do this properly so that it works even with Adam (will
+            # probably involve projecting back onto constraint set after
+            # updating; see AMSGrad docs)
+            sqrt_gg = np.sqrt(np.dot(grad, step))
+            step = step / (sqrt_gg + 1e-6)
         delta = np.max(np.abs(grad))
-        if 0 == (t % 500):
+        if 0 == (t % 10):  # if 0 == (t % 500):
             print('Feature count error@iter % 3d: %f (||params||=%f, '
-                  '||grad||=%f, ||fcount||=%f)' %
+                  '||grad||=%f, ||fcount||=%f, ||step||=%f)' %
                   (t, delta, np.linalg.norm(rew_params), np.linalg.norm(grad),
-                   np.linalg.norm(pol_feature_counts)))
-        optimiser.step(grad)
+                   np.linalg.norm(pol_feature_counts), np.linalg.norm(step)))
+        optimiser.step(step)
         t += 1
     return optimiser.current_params, pol_feature_counts
 
@@ -129,6 +177,9 @@ def maxent_irl_ng(env, optimiser, feature_counts, linf_eps=1e-5):
 
 # TODO: add a few different LR schedules (probably constant, 1/t, and 1/sqrt(t)
 # step sizes)
+
+# TODO: also add the ability to project back onto a constraint set for my
+# experiments
 
 
 class Optimiser(metaclass=abc.ABCMeta):

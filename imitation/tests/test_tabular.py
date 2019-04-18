@@ -208,7 +208,7 @@ def test_policy_om_reasonable_mdp():
     demo_counts = D @ mdp.observation_matrix
     # initial reward weights
     init_weights = np.zeros_like(demo_counts)
-    opt = SGD(init_weights, alpha=5e-3)
+    opt = AMSGrad(init_weights, alpha=1e-2)
     # opt = AMSGrad(init_weights, alpha=1e-1)
     final_weights, final_counts = maxent_irl(
         mdp, opt, demo_counts, linf_eps=1e-2)
@@ -244,7 +244,7 @@ def test_optimisers():
         assert np.linalg.norm(grad) > 1
         assert np.abs(val) > 1
         print('Initial: val=%.3f, grad=%.3f' % (val, np.linalg.norm(grad)))
-        for it in range(50000):
+        for it in range(25000):
             optimiser.step(grad)
             x = optimiser.current_params
             grad = df(x)

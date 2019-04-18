@@ -40,7 +40,9 @@ class ModelBasedEnv(gym.Env, metaclass=abc.ABCMeta):
     def reset(self):
         self.cur_state = 0
         self.actions_taken = 0
-        return self.observation_matrix[self.cur_state]
+        # as in step(), we copy so that it can't be mutated in-place (updates
+        # will be reflected in self.observation_matrix!)
+        return self.observation_matrix[self.cur_state].copy()
 
     def step(self, action):
         old_state = self.cur_state
@@ -53,7 +55,8 @@ class ModelBasedEnv(gym.Env, metaclass=abc.ABCMeta):
         done = self.actions_taken >= self.horizon
         reward = self.reward_matrix[old_state]
         assert np.isscalar(reward), reward
-        obs = self.observation_matrix[next_state]
+        # copy so that it can't be mutated in-place
+        obs = self.observation_matrix[next_state].copy()
         assert obs.ndim == 1, obs.shape
         infos = {"old_state": old_state, "new_state": next_state}
         return obs, reward, done, infos
