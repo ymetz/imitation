@@ -46,6 +46,40 @@ def mce_partition_fh(env, *, R=None):
     return V, Q, pi
 
 
+def mce_partition_ih(env, gamma, *, R=None):
+    """Infinite-horizon version of mce_partition_fh."""
+
+    raise NotImplementedError("I still need to write this")
+
+    # shorthand
+    horizon = env.horizon
+    n_states = env.n_states
+    n_actions = env.n_actions
+    T = env.transition_matrix
+    if R is None:
+        R = env.reward_matrix
+
+    # actual algorithm
+    V = np.full((horizon + 1, n_states, ), -np.inf)
+    V[horizon, :] = 0  # so that Z_T(s)=exp(0) (no reward at end)
+    Q = np.zeros((horizon, n_actions, n_states))
+    for t in range(horizon)[::-1]:
+        # TODO: figure out which states I want to constrain state sequences to
+        # end in (probably not necessarily in finite-horizon case)
+        V[t, :] = np.zeros((n_states, ))
+        for a in range(n_actions):
+            Q[t, a, :] = R + T[:, a, :] @ V[t + 1, :]
+            # np.logaddexp does something equivalent to Ziebart's "stable
+            # softmax" (Algorithm 9.2)
+            V[t, :] = np.logaddexp(V[t, :], Q[t, a, :])
+
+    # transpose Q so that it's states-first, actions-last
+    Q = Q.transpose((0, 2, 1))
+    pi = np.exp(Q - V[:horizon, :, None])  # eqn. (9.1)
+
+    return V, Q, pi
+
+
 def mce_occupancy_measures(env, *, pi=None, R=None):
     """Calculate state visitation frequency Ds for each state s under a given
     policy pi. You can get pi from mce_partition_func()."""
@@ -133,7 +167,10 @@ def maxent_irl_ng(env,
                   optimiser,
                   feature_counts,
                   linf_eps=1e-5,
-                  constrained_update=False):
+                  constrained_update=False,
+                  *,
+                  fim_ident_eps=0.0,
+                  step_denom_eps=1e-6):
     """Natural gradient IRL."""
     obs_mat = env.observation_matrix
     delta = linf_eps + 1
@@ -151,15 +188,17 @@ def maxent_irl_ng(env,
         traj_grads = _get_grad_r_from_trajectories(env, pi, ntraj=100)
         outer_prod_things = (t - pol_feature_counts for t in traj_grads)
         fim = np.mean([np.outer(m, m) for m in outer_prod_things], axis=0)
+        fim = fim + fim_ident_eps * np.eye(len(fim))
         grad = feature_counts - pol_feature_counts
         grad = -grad
+        # TODO: solve this with conjugate gradient
         step = np.linalg.solve(fim, grad)
         if constrained_update:
             # TODO: do this properly so that it works even with Adam (will
             # probably involve projecting back onto constraint set after
             # updating; see AMSGrad docs)
             sqrt_gg = np.sqrt(np.dot(grad, step))
-            step = step / (sqrt_gg + 1e-6)
+            step = step / (sqrt_gg + step_denom_eps)
         delta = np.max(np.abs(grad))
         if 0 == (t % 10):  # if 0 == (t % 500):
             print('Feature count error@iter % 3d: %f (||params||=%f, '
