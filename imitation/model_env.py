@@ -126,9 +126,9 @@ def make_random_trans_mat(
             # uniformly sample a number of successors in [1,max_branch_factor]
             # for this action
             succs = rand_state.randint(1, max_branch_factor + 1)
-            next_states = np.random.choice(state_array,
-                                           size=(succs, ),
-                                           replace=False)
+            next_states = rand_state.choice(state_array,
+                                            size=(succs, ),
+                                            replace=False)
             # generate random vec in probability simplex
             next_vec = rand_state.dirichlet(np.ones((succs, )))
             next_vec = next_vec / np.sum(next_vec)
@@ -151,7 +151,7 @@ def make_obs_mat(
     if not is_random:
         assert obs_dim is None
     if is_random:
-        obs_mat = np.random.normal(0, 1, (n_states, obs_dim))
+        obs_mat = rand_state.normal(0, 1, (n_states, obs_dim))
     else:
         obs_mat = np.identity(n_states)
     assert obs_mat.ndim == 2 \
@@ -191,7 +191,7 @@ class RandomMDP(ModelBasedEnv):
             max_branch_factor=branch_factor,
             rand_state=rand_gen)
         self._horizon = horizon
-        self._reward_weights = np.random.randn(
+        self._reward_weights = rand_gen.randn(
             self._observation_matrix.shape[-1])
         # TODO: should I have action-dependent rewards? If so, how do I make
         # the reward function aware of the current action?

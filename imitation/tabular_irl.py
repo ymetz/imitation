@@ -5,6 +5,7 @@ some Numpy-based optimisers so that this code can be run without
 PyTorch/TensorFlow."""
 
 import abc
+import copy
 
 import jax
 import jax.numpy as jnp
@@ -89,28 +90,32 @@ def maxent_irl(
         optimiser,
         rmodel,
         demo_state_om,
-        # TODO: change termination condition to use gradient instead
-        linf_eps=1e-5,
+        # we terminate either once linf_eps goes below this value, or once
+        # gradient norm goes below second value
+        linf_eps=1e-3,
+        grad_l2_eps=1e-4,
         print_interval=100,
         occupancy_change_dest=None,
         occupancy_error_dest=None):
     """Vanilla maxent IRL with whatever optimiser you want to use."""
     obs_mat = env.observation_matrix
     delta = linf_eps + 1
+    grad_norm = grad_l2_eps + 1
     t = 0
     assert demo_state_om.shape == (len(obs_mat), )
     rew_params = optimiser.current_params
     rmodel.set_params(rew_params)
     last_occ = None
-    while delta > linf_eps:
+    while delta > linf_eps and grad_norm > grad_l2_eps:
         predicted_r, out_grads = rmodel.out_grads(obs_mat)
         _, visitations = mce_occupancy_measures(env, R=predicted_r)
-        pol_grad = np.mean(visitations[:, None] * out_grads, axis=0)
+        pol_grad = np.sum(visitations[:, None] * out_grads, axis=0)
         # gradient of reward function w.r.t parameters, with expectation taken
         # over states
-        expert_grad = np.mean(demo_state_om[:, None] * out_grads, axis=0)
+        expert_grad = np.sum(demo_state_om[:, None] * out_grads, axis=0)
         # FIXME: is this even the correct gradient? Seems negated. Hmm.
         grad = pol_grad - expert_grad
+        grad_norm = np.linalg.norm(grad)
         delta = np.max(np.abs(demo_state_om - visitations))
         if print_interval is not None and 0 == (t % print_interval):
             print('Occupancy measure error@iter % 3d: %f (||params||=%f, '
@@ -169,7 +174,10 @@ def _get_grad_r_from_trajectories(env, good_pi, out_grads, ntraj=100):
 
 def _approximate_fisher(env, good_pi, pol_grad, out_grads, ntraj,
                         fim_ident_eps):
-    """Approximate the FIM with samples."""
+    """Approximate the FIM with samples. This uses a very approximate gradient
+    that assumes the agent ONLY visits one single trajectory; that's correct in
+    the deterministic case, but a little bit off in the probabilistic case
+    (depending on MDP branchiness)."""
     traj_grads = _get_grad_r_from_trajectories(env,
                                                good_pi,
                                                out_grads,
@@ -177,7 +185,7 @@ def _approximate_fisher(env, good_pi, pol_grad, out_grads, ntraj,
     # yes, you're meant to subtract pol_grad rather than expert_grad; this
     # is expected Hessian of KL between current policy and new policy
     outer_prod_things = list(t - pol_grad for t in traj_grads)
-    fim = np.mean([np.outer(m, m) for m in outer_prod_things], axis=0)
+    fim = np.mean([np.outer(g, g) for g in outer_prod_things], axis=0)
     fim = fim + fim_ident_eps * np.eye(len(fim))
     return fim
 
@@ -193,7 +201,8 @@ def maxent_irl_ng(env,
                   step_denom_eps=1e-6,
                   fim_ntraj=100,
                   print_interval=100,
-                  exact_fim=False):
+                  exact_fim=True,
+                  clip_step=False):
     """Natural gradient IRL."""
     obs_mat = env.observation_matrix
     delta = linf_eps + 1
@@ -204,18 +213,23 @@ def maxent_irl_ng(env,
         predicted_r, out_grads = rmodel.out_grads(obs_mat)
         _, _, pi = mce_partition_fh(env=env, R=predicted_r)
         _, visitations = mce_occupancy_measures(env, R=predicted_r, pi=pi)
-        pol_grad = np.mean(visitations[:, None] * out_grads, axis=0)
-        expert_grad = np.mean(demo_state_om[:, None] * out_grads, axis=0)
+        pol_grad = np.sum(visitations[:, None] * out_grads, axis=0)
+        expert_grad = np.sum(demo_state_om[:, None] * out_grads, axis=0)
         if exact_fim:
-            # TODO: implement exact FIM and check numerically that it matches
-            # normal Fisher
-            raise NotImplementedError("I haven't done this yet")
+            # TODO: check that this is numerically close to my shithouse hacky
+            # Fisher
+            fim = _exact_fisher(env.observation_matrix, pi,
+                                env.transition_matrix, out_grads)
         else:
+            # compute approximate Fisher using samples + ignorance of dynamics
+            # (this assumes grad for a trajectory is difference in feature
+            # counts between expert and trajectory, but in reality it's a bit
+            # more complex)
             fim = _approximate_fisher(env, pi, pol_grad, out_grads, fim_ntraj,
                                       fim_ident_eps)
         grad = pol_grad - expert_grad
         try:
-            step = np.linalg.solve(fim, grad)
+            step = np.linalg.solve(fim + 1e-7 * np.eye(fim.shape[0]), grad)
         except Exception as ex:
             print("Exception (%s). Eigenvalues were %s and ||grad|| is %s" %
                   (ex, np.linalg.eigvalsh(fim), np.linalg.norm(grad)))
@@ -226,12 +240,18 @@ def maxent_irl_ng(env,
             # updating; see AMSGrad docs)
             sqrt_gg = np.sqrt(np.dot(grad, step))
             step = step / (sqrt_gg + step_denom_eps)
+        if clip_step:
+            # clip the step to "sane" norm (say 1; bigger is ridiculous)
+            max_norm = 1
+            step_norm = np.linalg.norm(step)
+            if step_norm > max_norm:
+                step = max_norm * step / step_norm
         delta = np.max(np.abs(visitations - demo_state_om))
         if 0 == (t % print_interval):
             print('Occupancy measure error@iter % 3d: %f (||params||=%f, '
-                  '||grad||=%f, ||step||=%f)' %
+                  '||grad||=%f, ||step||=%f, ||fim||=%f)' %
                   (t, delta, np.linalg.norm(rew_params), np.linalg.norm(grad),
-                   np.linalg.norm(step)))
+                   np.linalg.norm(step), np.linalg.norm(fim.flatten())))
         optimiser.step(step)
         rew_params = optimiser.current_params
         rmodel.set_params(rew_params)
@@ -244,7 +264,7 @@ def _compute_feature_expectation_matrix(obs_mat, policy, trans_mat):
     rolling forward from that state & time step until the end of time using the
     given policy and transition dynamics."""
     n_states, d_obs = obs_mat.shape
-    T, n_states_prime, n_actions = policy
+    T, n_states_prime, n_actions = policy.shape
     assert n_states == n_states_prime, \
         "obs mat shape %s and policy shape %s are mismatched" \
         % (obs_mat.shape, policy.shape)
@@ -254,8 +274,8 @@ def _compute_feature_expectation_matrix(obs_mat, policy, trans_mat):
     for t in range(T - 2, -1, -1):
         for s in range(n_states):
             next_state_dist = trans_mat[s].T @ policy[t, s]
-            exp_features = next_state_dist[:, None] * obs_mat
-            out_matrix[t, s] = exp_features
+            future_feats = np.sum(next_state_dist[:, None] * obs_mat, axis=0)
+            out_matrix[t, s] = obs_mat[s] + future_feats
     return out_matrix
 
 
@@ -263,65 +283,92 @@ def _compute_feature_deltas(obs_mat, policy, trans_mat):
     """Compute M[t,s,a] = f(s) + E_{s'|a}[F[t+1,s]] - F[t,s]."""
     expect_feat_mat = _compute_feature_expectation_matrix(
         obs_mat, policy, trans_mat)
-    T, n_states, d_obs = expect_feat_mat
-    T, n_states_prime, n_actions = policy
+    T, n_states, d_obs = expect_feat_mat.shape
+    T, n_states_prime, n_actions = policy.shape
     assert n_states == n_states_prime
     # indexing: what is time step? What is current state? What is chosen action
     # in trajectory? Final axis is observation.
-    out_matrix = np.zeros((T, n_states, n_actions, d_obs))
+    out_matrix = np.zeros((T - 1, n_states, n_actions, d_obs))
     for t in range(T - 1):
         for s in range(n_states):
             for a in range(n_actions):
-                this_exp = expect_feat_mat[s, s]
+                this_exp = expect_feat_mat[t, s]
                 # what's the distribution over next state future feature
                 # expectation vectors given action a?
                 trans_prob = trans_mat[s, a]
-                next_exp = trans_prob[:, None] * expect_feat_mat[t + 1]
-                delta = obs_mat[t, s] + next_exp - this_exp
+                next_exp = np.sum(trans_prob[:, None] * expect_feat_mat[t + 1],
+                                  axis=0)
+                delta = obs_mat[s] + next_exp - this_exp
                 out_matrix[t, s, a] = delta
     return out_matrix
 
 
-def _exact_fisher(obs_mat, policy, trans_mat, feats_mat):
+def _exact_fisher(obs_mat, policy, trans_mat, feats_mat, diag=False):
     # can replace feats_mat with gradients & it all works out fine
     T, n_states, n_actions = policy.shape
-    n_states, d_obs = feats_mat
+    n_states, d_obs = feats_mat.shape
     deltas = _compute_feature_deltas(obs_mat, policy, trans_mat)
     accumulator = np.zeros((d_obs, d_obs))
     # this is O([|T| |S| |A|]^2). Not as bad as explicitly enumerating all
     # trajectories, but still very bad!
     # Dimensions: time of (s,a); s; a; time of (s',a'); s'; a'
-    occ_matrix = np.full((T, n_states, n_actions, T, n_states, n_actions), -1)
+    # occ_matrix = np.full(
+    #     (T, n_states, n_actions, T, n_states, n_actions), float('nan'))
+    occ_matrix = np.full((T, n_states, n_actions, T, n_states, n_actions), 0.0)
+    SKIP_THRESH = 1e-10
     # FIXME: get rid of all of occ_matrix except the bits that matter (last
     # timestep)
     # FIXME: roll up the inner ~2 loops (represents O(|S|*|A|) computation, so
     # Numpy should like it)
-    # FIXME: once this ALL works, and you've verified that, add Numba to it so
-    # that you can speed it up :)
-    for t in range(T):
+    for t in range(T - 1):
+        # what is the probability that we'll end up in this state from previous
+        # state? If the state & action don't match, then it's zero.
+        occ_matrix[t, :, :, t, :, :] = 0
+        if t == 0:
+            # assume we always start in state 0 & then just take an
+            # action
+            for a_orig in range(n_actions):
+                occ_matrix[0, 0, a_orig, 0, 0, a_orig] = policy[0, 0, a_orig]
+        else:
+            for s_orig in range(n_states):
+                for a_orig in range(n_actions):
+                    # FIXME: is this really correct? I'm MEANT to be measuring
+                    # p(s_t,a_t,s_{t+1},a_{t+1}) with the (s_t,a_t) tuple
+                    # marginalised out.
+                    occ_matrix[t, s_orig, a_orig, t, s_orig, a_orig] \
+                        = np.sum(occ_matrix[t-1, :, :, t, s_orig, a_orig])
         for s in range(n_states):
             for a in range(n_actions):
-                # what is the probability that we'll end up in this state from
-                # previous state?
-                if t == 0:
-                    # assume we always start in state 0 & then just take an
-                    # action
-                    occ_matrix[t, s, a, t, s, a] \
-                        = float(s == 0) * policy[0, s, a]
+                dt_base = deltas[t, s, a]
+                # probability that we will visit state s and execute action a
+                # at time t
+                occ_prob = occ_matrix[t, s, a, t, s, a]
+                if occ_prob < SKIP_THRESH:
+                    continue
+                if diag:
+                    accumulator += 2 * occ_prob * np.diag(dt_base * dt_base)
                 else:
-                    occ_matrix[t, s, a, t, s, a] \
-                        = np.sum(occ_matrix[t-1, :, :, t, s, a])
-                for t_prime in range(t + 1, T):
+                    accumulator += 2 * occ_prob * np.outer(dt_base, dt_base)
+                for t_prime in range(t + 1, T - 1):
                     for s_prime in range(n_states):
                         for a_prime in range(n_actions):
-                            # previous distribution over (s,a) pairs:
+                            # occupancy measure at previous time step
                             prev_dist = occ_matrix[t, s, a, t_prime - 1]
 
                             # roll forward one step with transition function to
                             # get probability of visiting state sprime
-                            # TODO: verify that this is correct
                             visit_prob = np.sum(prev_dist *
                                                 trans_mat[:, :, s_prime])
+                            # vvv removed code to check correctness vvv
+                            # v_prob_test = 0.0
+                            # for s_prev in range(n_states):
+                            #     for a_prev in range(n_actions):
+                            #         v_prob_test += prev_dist[s_prev, a_prev] \
+                            #             * trans_mat[s_prev, a_prev, s_prime]
+                            # assert np.allclose(v_prob_test, visit_prob), \
+                            #     "shit mismatch (manual %f, auto %f)" \
+                            #     % (v_prob_test, visit_prob)
+                            # ^^^ removed code to check correctness ^^^
 
                             # combine with new dist over policy to get dist on
                             # (s,a)
@@ -330,77 +377,135 @@ def _exact_fisher(obs_mat, policy, trans_mat, feats_mat):
                                                              a_prime]
                             occ_matrix[t, s, a, t_prime, s_prime,
                                        a_prime] = prime_prob
+                            if prime_prob < SKIP_THRESH:
+                                continue
                             dt = deltas[t, s, a]
                             dt_prime = deltas[t_prime, s_prime, a_prime]
-                            accumulator += prime_prob * (np.outer(
-                                dt, dt_prime) + np.outer(dt_prime, dt))
+                            if diag:
+                                accumulator += 2 * prime_prob * np.diag(
+                                    dt * dt_prime)
+                            else:
+                                outer = np.outer(dt, dt_prime)
+                                accumulator += prime_prob * (outer + outer.T)
+                # sanity check to make sure I'm actually doing what I think I
+                # am
+                # step_sum = np.sum(occ_matrix[t, s, a, t+1, :, :])
+                # if step_sum > 1:
+                #     print('step_sum at [t,s,a]=[%d,%d,%d] is' % (t, s, a),
+                #           step_sum, '(should be <=1)')
     return accumulator
 
 
-# def maxent_irl_md(
-#         env,
-#         optimiser,
-#         rmodel,
-#         demo_state_om,
-#         linf_eps=1e-5,
-#         *,
-#         # inner learning rate (alpha) for GD on surrogate objective;
-#         # smaller means lower L2 change in weights when computing
-#         # next update
-#         inner_alpha=1e-3,
-#         # outer alpha for MD on main objective; smaller means lower
-#         # KL change at each step
-#         outer_alpha=1e-4,
-#         print_interval=100):
-#     """Mirror descent maxent IRL. This uses a linearised approximation gradient
-#     of log likelihood of demonstrations, plus the true gradient of the KL
-#     divergence between the 'current-step policy' and the 'next-step policy'
-#     that we're trying to find. We iterate until the combined gradient is zero.
-#     This is not very efficient, but does give us a faithful emulation of mirror
-#     descent."""
-#     raise NotImplementedError("this is totally broken")
-#     obs_mat = env.observation_matrix
-#     delta = linf_eps + 1
-#     t = 0
-#     rew_params = optimiser.current_params
-#     rmodel.set_params(rew_params)
-#     while delta > linf_eps:
-#         predicted_r, out_grads = rmodel.out_grads(obs_mat)
-#         _, _, pi = mce_partition_fh(env=env, R=predicted_r)
-#         _, visitations = mce_occupancy_measures(env, R=predicted_r, pi=pi)
-#         pol_grad = np.mean(visitations[:, None] * out_grads, axis=0)
-#         expert_grad = np.mean(demo_state_om[:, None] * out_grads, axis=0)
-#         if exact_fim:
-#             # TODO: implement exact FIM and check numerically that it matches
-#             # normal Fisher
-#             raise NotImplementedError("I haven't done this yet")
-#         else:
-#             fim = _approximate_fisher(env, pi, pol_grad, out_grads, fim_ntraj,
-#                                       fim_ident_eps)
-#         grad = pol_grad - expert_grad
-#         try:
-#             step = np.linalg.solve(fim, grad)
-#         except Exception as ex:
-#             print("Exception (%s). Eigenvalues were %s and ||grad|| is %s" %
-#                   (ex, np.linalg.eigvalsh(fim), np.linalg.norm(grad)))
-#             raise
-#         if constrained_update:
-#             # TODO: do this properly so that it works even with Adam (will
-#             # probably involve projecting back onto constraint set after
-#             # updating; see AMSGrad docs)
-#             sqrt_gg = np.sqrt(np.dot(grad, step))
-#             step = step / (sqrt_gg + step_denom_eps)
-#         delta = np.max(np.abs(visitations - demo_state_om))
-#         if 0 == (t % print_interval):
-#             print('Occupancy measure error@iter % 3d: %f (||params||=%f, '
-#                   '||grad||=%f, ||step||=%f)' %
-#                   (t, delta, np.linalg.norm(rew_params), np.linalg.norm(grad),
-#                    np.linalg.norm(step)))
-#         optimiser.step(step)
-#         rew_params = optimiser.current_params
-#         rmodel.set_params(rew_params)
-#         t += 1
-#     return optimiser.current_params, visitations
+def _maxent_irl_md_inner(
+        env,
+        rmodel,
+        main_objective_grad,
+        inner_gd_lr,
+        alpha,
+        current_om,
+        grad_l2_eps=1e-4,
+        # TODO: maybe make this smaller?
+        max_iter=200,
+        verbose=False,
+):
+    """Stripped down version of maxent IRL code that """
+    # TODO: consider using inverse FIM or something as a preconditioner; it
+    # would be like doing natural GD on the inside, but without having to
+    # re-compute the FIM at each step.
+    obs_mat = env.observation_matrix
+    grad_norm = grad_l2_eps + 1
+    assert current_om.shape == (len(obs_mat), )
+    inner_rmodel = copy.deepcopy(rmodel)
+    inner_optimiser = SGD(inner_rmodel, inner_gd_lr)
+    init_rew_params = inner_optimiser.current_params
+    t = 0
+    while grad_norm > grad_l2_eps and t < max_iter:
+        predicted_r, out_grads = inner_rmodel.out_grads(obs_mat)
+        _, visitations = mce_occupancy_measures(env, R=predicted_r)
+        pol_grad = np.sum(visitations[:, None] * out_grads, axis=0)
+        # gradient of reward function w.r.t parameters, with expectation taken
+        # over states
+        expert_grad = np.sum(current_om[:, None] * out_grads, axis=0)
+        # FIXME: is this even the correct gradient? Seems negated. Hmm.
+        grad = -main_objective_grad + (pol_grad - expert_grad) / alpha
+        grad_norm = np.linalg.norm(grad)
+        inner_optimiser.step(grad)
+        inner_rmodel.set_params(inner_optimiser.current_params)
+        t += 1
+        outer_step = inner_optimiser.current_params - init_rew_params
+        if verbose:
+            print(
+                '  [inner opt %03d] grad norm ||%.4g||, outer step ||%.4g||' %
+                (t, grad_norm, np.linalg.norm(outer_step)))
+    return outer_step
+
+
+def maxent_irl_md(
+        env,
+        optimiser,
+        rmodel,
+        demo_state_om,
+        *,
+        # the alpha (inverse of KL coefficient) that we use in our inner step
+        alpha=1e-3,
+        # inner learning rate (alpha) for plain GD on surrogate objective;
+        # smaller means lower L2 change in weights when computing next update
+        inner_gd_lr=1e-3,
+        linf_eps=1e-3,
+        grad_l2_eps=1e-3,
+        print_interval=100,
+        occupancy_change_dest=None,
+        occupancy_error_dest=None):
+    """Mirror descent maxent IRL. This uses a linearised approximation gradient
+    of log likelihood of demonstrations, plus the true gradient of the KL
+    divergence between the 'current-step policy' and the 'next-step policy'
+    that we're trying to find. We iterate until the combined gradient is zero.
+    This is not very efficient, but does give us a faithful emulation of mirror
+    descent."""
+    obs_mat = env.observation_matrix
+    delta = linf_eps + 1
+    grad_l2 = grad_l2_eps + 1
+    t = 0
+    rew_params = optimiser.current_params
+    rmodel.set_params(rew_params)
+    last_occ = None
+    while delta > linf_eps and grad_l2 > grad_l2_eps:
+        predicted_r, out_grads = rmodel.out_grads(obs_mat)
+        _, _, pi = mce_partition_fh(env=env, R=predicted_r)
+        _, visitations = mce_occupancy_measures(env, R=predicted_r, pi=pi)
+        pol_grad = np.mean(visitations[:, None] * out_grads, axis=0)
+        expert_grad = np.mean(demo_state_om[:, None] * out_grads, axis=0)
+        grad = pol_grad - expert_grad
+        grad_l2 = np.linalg.norm(grad)
+        step = _maxent_irl_md_inner(env,
+                                    rmodel,
+                                    main_objective_grad=grad,
+                                    current_om=visitations,
+                                    alpha=alpha,
+                                    inner_gd_lr=inner_gd_lr,
+                                    grad_l2_eps=grad_l2_eps)
+        delta = np.max(np.abs(visitations - demo_state_om))
+        if 0 == (t % print_interval):
+            print('Occupancy measure error@iter % 3d: %f (||params||=%f, '
+                  '||grad||=%f, ||step||=%f, ||step dot grad||=%f)' %
+                  (t, delta, np.linalg.norm(rew_params), np.linalg.norm(grad),
+                   np.linalg.norm(step), np.dot(step, grad)))
+        optimiser.step(step)
+        rew_params = optimiser.current_params
+        rmodel.set_params(rew_params)
+        t += 1
+        if occupancy_error_dest is not None:
+            occupancy_error_dest.append(
+                np.sum(np.abs(demo_state_om - visitations)))
+        if occupancy_change_dest is not None:
+            if last_occ is None:
+                occupancy_change_dest.append(0)
+            else:
+                occupancy_change_dest.append(
+                    np.sum(np.abs(last_occ - visitations)))
+            last_occ = visitations
+    return optimiser.current_params, visitations
+
 
 # ############################### #
 # ####### REWARD MODELS ######### #
