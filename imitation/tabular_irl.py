@@ -12,15 +12,13 @@ import jax.numpy as jnp
 import jax.random as jrandom
 import jax.experimental.stax as jstax
 import numpy as np
+import scipy
 
 
 def mce_partition_fh(env, *, R=None):
     """Calculate V^soft, Q^soft, and pi using recurrences (9.1), (9.2), and
     (9.3). Stop once l-infty distance between Vs is less than linf_eps. This is
     the finite-horizon variant."""
-
-    # TODO: write a non-finite-horizon variant of this. It will have to use
-    # discounting if you want it to converge.
 
     # shorthand
     horizon = env.horizon
@@ -29,27 +27,41 @@ def mce_partition_fh(env, *, R=None):
     T = env.transition_matrix
     if R is None:
         R = env.reward_matrix
+        
+    # indexed as V[t,s]
+    V = np.full((horizon, n_states), -np.inf)
+    # indexed as Q[t,s,a]
+    Q = np.zeros((horizon, n_states, n_actions))
+    broad_R = R[:, None]
+    # final Q(s,a) is just reward
+    Q[horizon - 1, :, :] = broad_R
+    # V(s) is always normalising constant
+    V[horizon - 1, :] = scipy.special.logsumexp(Q[horizon - 1, :, :], axis=1)
 
-    # actual algorithm
-    V = np.full((
-        horizon + 1,
-        n_states,
-    ), -np.inf)
-    V[horizon, :] = 0  # so that Z_T(s)=exp(0) (no reward at end)
-    Q = np.zeros((horizon, n_actions, n_states))
-    for t in range(horizon)[::-1]:
-        # TODO: figure out which states I want to constrain state sequences to
-        # end in (probably not necessarily in finite-horizon case)
-        V[t, :] = np.zeros((n_states, ))
-        for a in range(n_actions):
-            Q[t, a, :] = R + T[:, a, :] @ V[t + 1, :]
-            # np.logaddexp does something equivalent to Ziebart's "stable
-            # softmax" (Algorithm 9.2)
-            V[t, :] = np.logaddexp(V[t, :], Q[t, a, :])
+    for t in range(horizon - 1)[::-1]:
+        next_values_s_a = T @ V[t + 1, :]
+        Q[t, :, :] = broad_R + next_values_s_a
+        V[t, :] = scipy.special.logsumexp(Q[t, :, :], axis=1)
 
+    pi = np.exp(Q - V[:, :, None])
+
+    # This is aping Ziebart, not my own thing:
+    # V = np.full((
+    #     horizon + 1,
+    #     n_states,
+    # ), -np.inf)
+    # V[horizon, :] = 0  # so that Z_T(s)=exp(0) (no reward at end)
+    # Q = np.zeros((horizon, n_actions, n_states))
+    # for t in range(horizon)[::-1]:
+    #     V[t, :] = np.zeros((n_states, ))
+    #     for a in range(n_actions):
+    #         Q[t, a, :] = R + T[:, a, :] @ V[t + 1, :]
+    #         # np.logaddexp does something equivalent to Ziebart's "stable
+    #         # softmax" (Algorithm 9.2)
+    #         V[t, :] = np.logaddexp(V[t, :], Q[t, a, :])
     # transpose Q so that it's states-first, actions-last
-    Q = Q.transpose((0, 2, 1))
-    pi = np.exp(Q - V[:horizon, :, None])  # eqn. (9.1)
+    # Q = Q.transpose((0, 2, 1))
+    # pi = np.exp(Q - V[:horizon, :, None])  # eqn. (9.1)
 
     return V, Q, pi
 
@@ -194,37 +206,41 @@ def maxent_irl_ng(env,
                   optimiser,
                   rmodel,
                   demo_state_om,
-                  linf_eps=1e-5,
-                  constrained_update=False,
                   *,
+                  linf_eps=1e-5,
+                  grad_l2_eps=1e-4,
+                  constrained_update=False,
                   fim_ident_eps=0.0,
                   step_denom_eps=1e-6,
                   fim_ntraj=100,
                   print_interval=100,
                   exact_fim=True,
-                  clip_step=False):
+                  clip_step=False,
+                  clip_step_mag=10,
+                  occupancy_change_dest=None,
+                  occupancy_error_dest=None):
     """Natural gradient IRL."""
     obs_mat = env.observation_matrix
     delta = linf_eps + 1
+    grad_norm = grad_l2_eps + 1
     t = 0
     rew_params = optimiser.current_params
     rmodel.set_params(rew_params)
-    while delta > linf_eps:
+    last_occ = None
+    while delta > linf_eps and grad_norm > grad_l2_eps:
         predicted_r, out_grads = rmodel.out_grads(obs_mat)
         _, _, pi = mce_partition_fh(env=env, R=predicted_r)
         _, visitations = mce_occupancy_measures(env, R=predicted_r, pi=pi)
         pol_grad = np.sum(visitations[:, None] * out_grads, axis=0)
         expert_grad = np.sum(demo_state_om[:, None] * out_grads, axis=0)
         if exact_fim:
-            # TODO: check that this is numerically close to my shithouse hacky
-            # Fisher
             fim = _exact_fisher(env.observation_matrix, pi,
                                 env.transition_matrix, out_grads)
         else:
             # compute approximate Fisher using samples + ignorance of dynamics
             # (this assumes grad for a trajectory is difference in feature
             # counts between expert and trajectory, but in reality it's a bit
-            # more complex)
+            # more complex; probably a bad idea to use in reality)
             fim = _approximate_fisher(env, pi, pol_grad, out_grads, fim_ntraj,
                                       fim_ident_eps)
         grad = pol_grad - expert_grad
@@ -241,11 +257,10 @@ def maxent_irl_ng(env,
             sqrt_gg = np.sqrt(np.dot(grad, step))
             step = step / (sqrt_gg + step_denom_eps)
         if clip_step:
-            # clip the step to "sane" norm (say 1; bigger is ridiculous)
-            max_norm = 1
+            # clip the step to "sane" norm (say 100; bigger is ridiculous)
             step_norm = np.linalg.norm(step)
-            if step_norm > max_norm:
-                step = max_norm * step / step_norm
+            if step_norm > clip_step_mag:
+                step = clip_step_mag * step / step_norm
         delta = np.max(np.abs(visitations - demo_state_om))
         if 0 == (t % print_interval):
             print('Occupancy measure error@iter % 3d: %f (||params||=%f, '
@@ -256,6 +271,16 @@ def maxent_irl_ng(env,
         rew_params = optimiser.current_params
         rmodel.set_params(rew_params)
         t += 1
+        if occupancy_error_dest is not None:
+            occupancy_error_dest.append(
+                np.sum(np.abs(demo_state_om - visitations)))
+        if occupancy_change_dest is not None:
+            if last_occ is None:
+                occupancy_change_dest.append(0)
+            else:
+                occupancy_change_dest.append(
+                    np.sum(np.abs(last_occ - visitations)))
+            last_occ = visitations
     return optimiser.current_params, visitations
 
 
@@ -307,7 +332,7 @@ def _exact_fisher(obs_mat, policy, trans_mat, feats_mat, diag=False):
     # can replace feats_mat with gradients & it all works out fine
     T, n_states, n_actions = policy.shape
     n_states, d_obs = feats_mat.shape
-    deltas = _compute_feature_deltas(obs_mat, policy, trans_mat)
+    deltas = _compute_feature_deltas(feats_mat, policy, trans_mat)
     accumulator = np.zeros((d_obs, d_obs))
     # this is O([|T| |S| |A|]^2). Not as bad as explicitly enumerating all
     # trajectories, but still very bad!
@@ -348,7 +373,11 @@ def _exact_fisher(obs_mat, policy, trans_mat, feats_mat, diag=False):
                 if diag:
                     accumulator += 2 * occ_prob * np.diag(dt_base * dt_base)
                 else:
-                    accumulator += 2 * occ_prob * np.outer(dt_base, dt_base)
+                    try:
+                        accumulator += 2 * occ_prob * np.outer(dt_base, dt_base)
+                    except Exception as ex:
+                        import ipdb; ipdb.set_trace()
+                        raise
                 for t_prime in range(t + 1, T - 1):
                     for s_prime in range(n_states):
                         for a_prime in range(n_actions):
@@ -684,6 +713,41 @@ def StaxSqueeze(axis=-1):
 # TODO: also add the ability to project back onto a constraint set for my
 # experiments
 
+class Schedule(metaclass=abc.ABCMeta):
+    """Base class for learning rate schedules."""
+    @abc.abstractmethod
+    def __iter__(self):
+        """Yield an iterable of step sizes."""
+        pass
+    
+
+class ConstantSchedule(Schedule):
+    """Constant step-size schedule."""
+    def __init__(self, lr):
+        self.lr = lr
+        
+    def __iter__(self):
+        while True:
+            yield self.lr
+            
+class SqrtTSchedule(Schedule):
+    def __init__(self, init_lr):
+        self.init_lr = init_lr
+    
+    def __iter__(self):
+        t = 1
+        while True:
+            yield self.init_lr / np.sqrt(t)
+            t += 1
+            
+            
+def get_schedule(lr_or_schedule):
+    if isinstance(lr_or_schedule, Schedule):
+        return lr_or_schedule
+    if isinstance(lr_or_schedule, (float, int)):
+        return ConstantSchedule(lr_or_schedule)
+    raise TypeError("No idea how to make schedule out of '%s'" % lr_or_schedule)
+
 
 class Optimiser(metaclass=abc.ABCMeta):
     @abc.abstractmethod
@@ -704,7 +768,7 @@ class AMSGrad(Optimiser):
     a diagonal approximation to natural gradient, just as Adam does, but
     without the pesky non-convergence issues."""
 
-    def __init__(self, rmodel, alpha=1e-3, beta1=0.9, beta2=0.99, eps=1e-8):
+    def __init__(self, rmodel, alpha_sched=1e-3, beta1=0.9, beta2=0.99, eps=1e-8):
         # x is initial parameter vector; alpha is step size; beta1 & beta2 are
         # as defined in AMSGrad paper; eps is added to sqrt(vhat) during
         # calculation of next iterate to ensure division does not overflow.
@@ -719,18 +783,19 @@ class AMSGrad(Optimiser):
         # parameter estimate
         self.x = init_params
         # step sizes etc.
-        self.alpha = alpha
+        self.alpha_schedule = iter(get_schedule(alpha_sched))
         self.beta1 = beta1
         self.beta2 = beta2
         self.eps = eps
 
     def step(self, grad):
+        alpha = next(self.alpha_schedule)
         self.m = self.beta1 * self.m + (1 - self.beta1) * grad
         self.v = self.beta2 * self.v + (1 - self.beta2) * grad**2
         self.vhat = np.maximum(self.vhat, self.v)
         # 1e-5 for numerical stability
         denom = np.sqrt(self.vhat) + self.eps
-        self.x = self.x - self.alpha * self.m / denom
+        self.x = self.x - alpha * self.m / denom
         return self.x
 
     @property
@@ -741,14 +806,15 @@ class AMSGrad(Optimiser):
 class SGD(Optimiser):
     """Standard gradient method."""
 
-    def __init__(self, rmodel, alpha=1e-3):
+    def __init__(self, rmodel, alpha_sched=1e-3):
         init_params = rmodel.get_params()
         self.x = init_params
-        self.alpha = alpha
+        self.alpha_schedule = iter(get_schedule(alpha_sched))
         self.cnt = 1
 
     def step(self, grad):
-        self.x = self.x - self.alpha * grad
+        alpha = next(self.alpha_schedule)
+        self.x = self.x - alpha * grad
         return self.x
 
     @property

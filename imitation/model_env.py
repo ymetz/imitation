@@ -151,7 +151,7 @@ def make_obs_mat(
     if not is_random:
         assert obs_dim is None
     if is_random:
-        obs_mat = rand_state.normal(0, 1, (n_states, obs_dim))
+        obs_mat = rand_state.normal(0, 2, (n_states, obs_dim))
     else:
         obs_mat = np.identity(n_states)
     assert obs_mat.ndim == 2 \
