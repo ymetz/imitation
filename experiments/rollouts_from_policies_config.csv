@@ -1,7 +1,4 @@
 env_config_name,n_demonstrations
-cartpole,10
-mountain_car,10
-acrobot,10
 half_cheetah,25
 hopper,25
 walker,25

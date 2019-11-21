@@ -1,16 +1,4 @@
 env_config_name,n_gen_steps_per_epoch,n_epochs,n_expert_demos
-cartpole,5000,300,1
-cartpole,5000,300,4
-cartpole,5000,300,7
-cartpole,5000,300,10
-mountain_car,5000,300,1
-mountain_car,5000,300,4
-mountain_car,5000,300,7
-mountain_car,5000,300,10
-acrobot,5000,300,1
-acrobot,5000,300,4
-acrobot,5000,300,7
-acrobot,5000,300,10
 half_cheetah,50000,500,4
 half_cheetah,50000,500,11
 half_cheetah,50000,500,18
