@@ -5,7 +5,7 @@ set -e
 # When training is finished, it reports the mean episode reward of each
 # expert.
 
-ENVS+="acrobot cartpole mountain_car "
+# ENVS+="acrobot cartpole mountain_car "
 ENVS+="reacher half_cheetah hopper ant humanoid swimmer walker "
 ENVS+="two_d_maze custom_ant disabled_ant "
 
