@@ -109,7 +109,7 @@ def _ray_tune_sacred_wrapper(sacred_ex_name: str,
     config["config_updates"] = base_config_updates
 
     run = ex.run(**config,
-                 options={"--run": run_name})
+                 options={"--name": run_name})
 
     # Ray Tune has a string formatting error if raylet completes without
     # any calls to `reporter`.
