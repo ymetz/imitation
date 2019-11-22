@@ -8,6 +8,8 @@ Adding custom named configs is necessary because the CLI interface can't add
 search spaces to the config like `"seed": tune.grid_search([0, 1, 2, 3])`.
 """
 
+import os.path as osp
+
 import numpy as np
 import ray.tune as tune
 import sacred
@@ -92,6 +94,26 @@ def example_cartpole_rl():
   base_named_configs = ["cartpole"]
   base_config_updates = {"init_tensorboard": True}
   resources_per_trial = dict(cpu=4)
+
+
+@parallel_ex.named_config
+def tune_mountain_car_try_0():
+  sacred_ex_name = "train_adversarial"
+  run_name = "tune_mountain_car_gail_try_0"
+  n_seeds = 3
+  search_space = {
+    "config_updates": dict(
+      init_trainer_kwargs=dict(
+        trainer_kwargs=dict(
+          debug_use_ground_truth=tune.grid_search([False, True]))),
+    )}
+  base_named_configs = ["mountain_car", "gail"]
+  base_config_updates = dict(
+    show_plots=False,
+    plot_interval=20,
+    rollout_path=osp.abspath(
+      "data/expert_models/mountain_car_0/rollouts/final.pkl"),
+  )
 
 
 EASY_ENVS = ["cartpole", "pendulum", "mountain_car"]
