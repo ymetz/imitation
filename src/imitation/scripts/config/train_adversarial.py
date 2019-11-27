@@ -107,6 +107,7 @@ def ant():
 @train_ex.named_config
 def cartpole():
   env_name = "CartPole-v1"
+  n_epochs = 200
   rollout_hint = "cartpole"
   init_trainer_kwargs = dict(
       scale=False,
@@ -142,6 +143,7 @@ def humanoid():
 def mountain_car():
   env_name = "MountainCar-v0"
   rollout_hint = "mountain_car"
+  n_epochs = 400
 
 
 @train_ex.named_config
