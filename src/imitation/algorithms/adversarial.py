@@ -284,8 +284,13 @@ class AdversarialTrainer:
     assert n_gen == len(gen_acts)
     assert n_gen == len(gen_next_obs)
 
+    # Normalize expert observations to match generator observations.
+    assert isinstance(self.venv_train_norm, VecNormalize)
+    expert_obs_norm = self.venv_train_norm._normalize_observation(
+      expert_sample.obs)
+
     # Concatenate rollouts, and label each row as expert or generator.
-    obs = np.concatenate([expert_sample.obs, gen_obs])
+    obs = np.concatenate([expert_obs_norm, gen_obs])
     acts = np.concatenate([expert_sample.acts, gen_acts])
     next_obs = np.concatenate([expert_sample.next_obs, gen_next_obs])
     labels = np.concatenate([np.zeros(n_expert, dtype=int),
