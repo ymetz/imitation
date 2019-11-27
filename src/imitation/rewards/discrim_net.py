@@ -193,7 +193,7 @@ class DiscrimNetAIRL(DiscrimNet):
   def __init__(self,
                reward_net: reward_net.RewardNet,
                entropy_weight: float = 1.0):
-    """Builds a DiscrimNetAIRL.
+    r"""Builds a DiscrimNetAIRL.
 
     Args:
         reward_net: A RewardNet, used as $f_{\theta}$ in the discriminator.

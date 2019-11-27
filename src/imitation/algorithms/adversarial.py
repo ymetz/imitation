@@ -103,16 +103,18 @@ class AdversarialTrainer:
     self._sess.run(tf.global_variables_initializer())
 
     if debug_use_ground_truth:
-      self.venv_train = self.venv_test = self.venv_train_norm = self.venv
+      self.venv_train = self.venv_test = self.venv
     else:
       reward_train = partial(
           self.discrim.reward_train,
           gen_log_prob_fn=self._gen_policy.action_probability)
+
       self.venv_train = reward_wrapper.RewardVecEnvWrapper(
           self.venv, reward_train)
       self.venv_test = reward_wrapper.RewardVecEnvWrapper(
           self.venv, self.discrim.reward_test)
-      self.venv_train_norm = VecNormalize(self.venv_train)
+
+    self.venv_train_norm = VecNormalize(self.venv_train)
 
     if gen_replay_buffer_capacity is None:
       gen_replay_buffer_capacity = 20 * self._n_disc_samples_per_buffer
