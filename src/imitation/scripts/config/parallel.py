@@ -99,7 +99,7 @@ def example_cartpole_rl():
 @parallel_ex.named_config
 def tune_mountain_car_try_0():
   sacred_ex_name = "train_adversarial"
-  run_name = "tune_mountain_car_gail_try_0_v8"
+  run_name = "tune_mountain_car_gail_try_0_v9"
   n_seeds = 3
   search_space = {
     "config_updates": dict(
@@ -119,7 +119,7 @@ def tune_mountain_car_try_0():
 @parallel_ex.named_config
 def cartpole_debug_ok():
   sacred_ex_name = "train_adversarial"
-  run_name = "tune_cartpole_gail_try_0_v8"
+  run_name = "tune_cartpole_gail_try_0_v9"
   n_seeds = 3
   search_space = {
     "config_updates": dict(
