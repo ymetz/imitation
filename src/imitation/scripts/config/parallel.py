@@ -119,7 +119,7 @@ def tune_mountain_car_try_0():
 @parallel_ex.named_config
 def cartpole_debug_ok():
   sacred_ex_name = "train_adversarial"
-  run_name = "tune_cartpole_gail_try_0_v9"
+  run_name = "tune_cartpole_gail_try_0_v10"
   n_seeds = 3
   search_space = {
     "config_updates": dict(
@@ -130,10 +130,12 @@ def cartpole_debug_ok():
   base_named_configs = ["cartpole", "gail"]
   base_config_updates = dict(
     show_plots=False,
-    plot_interval=-1,
+    extra_episode_data_interval=10,
+    plot_interval=0,
     rollout_path=osp.abspath(
       "data/expert_models/cartpole_2/rollouts/final.pkl"),
   )
+
 
 EASY_ENVS = ["cartpole", "pendulum", "mountain_car"]
 
