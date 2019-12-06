@@ -15,22 +15,24 @@ train_ex = sacred.Experiment("train_adversarial", interactive=True)
 @train_ex.config
 def train_defaults():
   env_name = "CartPole-v1"  # environment to train on
+  # Num times to generate a batch and update both generator and discrim.
   n_epochs = 50
   n_expert_demos = None  # Num demos used. None uses every demo possible
   n_episodes_eval = 50  # Num of episodes for final mean ground truth return
-  n_disc_steps_per_epoch = 50
-  n_gen_steps_per_epoch = 2048
   airl_entropy_weight = 1.0
+
+  batch_size = 2048  # Batch size for both generator and discrim updates.
 
   # Number of epochs in between plots (<0 disables) (=0 means final plot only)
   plot_interval = -1
+
   n_plot_episodes = 5  # Number of rollouts for each mean_ep_rew data
   # Interval for extra episode rew data. (<=0 disables)
   extra_episode_data_interval = -1
   show_plots = True  # Show plots in addition to saving them
 
   init_trainer_kwargs = dict(
-      num_vec=8,  # NOTE: changing this also changes the effective n_steps!
+      num_vec=8,  # Must evenly divide batch_size
       parallel=True,  # Use SubprocVecEnv (generally faster if num_vec>1)
       max_episode_steps=None,  # Set to positive int to limit episode horizons
       scale=True,
@@ -41,11 +43,11 @@ def train_defaults():
       ),
 
       trainer_kwargs=dict(
-          n_disc_samples_per_buffer=1000,
-          # Setting buffer capacity and disc samples to 1000 effectively
-          # disables the replay buffer. This seems to improve convergence
-          # speed, but may come at a cost of stability.
-          gen_replay_buffer_capacity=1000,
+          # Setting generator buffer capacity and discriminator batch size to
+          # the same number is equivalent to not using a replay buffer at all.
+          # This seems to improve convergence speed, but may come at a cost of
+          # stability.
+          gen_replay_buffer_capacity=batch_size,
       ),
 
       init_rl_kwargs=dict(policy_class=base.FeedForward32Policy,
@@ -57,6 +59,18 @@ def train_defaults():
   init_tensorboard = False  # If True, then write Tensorboard logs.
 
   rollout_hint = None  # Used to generate default rollout_path
+
+
+@train_ex.config
+def timesteps(n_epochs, batch_size):
+  total_timesteps = n_epochs * batch_size
+
+
+@train_ex.config
+def batch_size_to_n_steps(total_timesteps, init_trainer_kwargs, batch_size):
+  _num_vec = init_trainer_kwargs["num_vec"]
+  assert batch_size % _num_vec == 0, "num_vec must evenly divide batch_size"
+  init_trainer_kwargs["init_rl_kwargs"]["n_steps"] = batch_size // _num_vec
 
 
 @train_ex.config
@@ -204,13 +218,13 @@ def fast():
   n_epochs = 1
   n_expert_demos = 1
   n_episodes_eval = 1
+  batch_size = 2
   show_plots = False
-  n_disc_steps_per_epoch = 1
-  n_gen_steps_per_epoch = 1
   n_plot_episodes = 1
   init_trainer_kwargs = dict(
       parallel=False,  # easier to debug with everything in one process
       max_episode_steps=int(1e2),
+      num_vec=2,
   )
 
 

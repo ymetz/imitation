@@ -38,6 +38,7 @@ setup(
     install_requires=[
         'awscli',
         'gym[classic_control]',
+        'matplotlib',
         'numpy>=1.15',
         'ray[debug]==0.7.4',
         'tqdm',

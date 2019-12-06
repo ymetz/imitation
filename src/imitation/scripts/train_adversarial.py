@@ -33,7 +33,7 @@ def save(trainer, save_path):
   # TODO(gleave): unify this with the saving logic in data_collect?
   # (Needs #43 to be merged before attempting.)
   serialize.save_stable_model(os.path.join(save_path, "gen_policy"),
-                              trainer._gen_policy)
+                              trainer.gen_policy)
 
 
 @train_ex.main
@@ -43,11 +43,8 @@ def train(_run,
           rollout_path: str,
           n_expert_demos: Optional[int],
           log_dir: str,
-          *,
-          n_epochs: int,
-          n_gen_steps_per_epoch: int,
-          n_disc_steps_per_epoch: int,
           init_trainer_kwargs: dict,
+          total_timesteps: int,
           n_episodes_eval: int,
 
           plot_interval: int,
@@ -87,15 +84,10 @@ def train(_run,
       first `n_expert_demos` trajectories and drop the rest.
     log_dir: Directory to save models and other logging to.
 
-    n_epochs: The number of epochs to train. Each epoch consists of
-      `n_disc_steps_per_epoch` discriminator steps followed by
-      `n_gen_steps_per_epoch` generator steps.
-    n_gen_steps_per_epoch: The number of generator update steps during every
-      training epoch.
-    n_disc_steps_per_epoch: The number of discriminator update steps during
-      every training epoch.
     init_trainer_kwargs: Keyword arguments passed to `init_trainer`,
       used to initialize the trainer.
+    total_timesteps: The number of transitions to sample from the environment
+      during training.
     n_episodes_eval: The number of episodes to average over when calculating
       the average episode reward of the imitation policy for return.
 
@@ -163,27 +155,26 @@ def train(_run,
       visualizer = None
 
     # Main training loop.
-    for epoch in tqdm.tqdm(range(1, n_epochs+1), desc="epoch"):
-      trainer.train_disc(n_disc_steps_per_epoch)
-      if visualizer:
-        visualizer.add_data_disc_loss(False, epoch)
+    with trainer.train_gen_by_batch(total_timesteps) as train_gen:
+      n_epochs = total_timesteps // trainer.batch_size
 
-      trainer.train_gen(n_gen_steps_per_epoch)
-      if visualizer:
-        visualizer.add_data_disc_loss(True, epoch)
+      for epoch in tqdm.tqdm(range(1, n_epochs+1), desc="epoch"):
+        trainer.train_disc(trainer.batch_size)
+        if visualizer:
+          visualizer.add_data_disc_loss(False)
+        train_gen()
+        if visualizer:
+          visualizer.add_data_disc_loss(True)
 
-        if (extra_episode_data_interval > 0
-            and epoch % extra_episode_data_interval == 0):  # noqa: E129
-          visualizer.add_data_ep_reward(epoch)
-
-        if plot_interval > 0 and epoch % plot_interval == 0:
+        if visualizer and epoch % plot_interval == 0:
           visualizer.plot_disc_loss()
-          visualizer.add_data_ep_reward(epoch)
-          # Add episode mean rewards only at plot time because it is expensive.
+          visualizer.add_data_ep_reward(trainer.venv, "Ground Truth Reward")
+          visualizer.add_data_ep_reward(trainer.venv_train, "Train Reward")
+          visualizer.add_data_ep_reward(trainer.venv_test, "Test Reward")
           visualizer.plot_ep_reward()
 
-      if checkpoint_interval > 0 and epoch % checkpoint_interval == 0:
-        save(trainer, os.path.join(log_dir, "checkpoints", f"{epoch:05d}"))
+        if checkpoint_interval > 0 and epoch % checkpoint_interval == 0:
+          save(trainer, os.path.join(log_dir, "checkpoints", f"{epoch:05d}"))
 
     # Save final artifacts.
     save(trainer, os.path.join(log_dir, "checkpoints", "final"))
