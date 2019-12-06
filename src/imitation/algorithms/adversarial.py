@@ -264,12 +264,10 @@ class AdversarialTrainer:
             raise RuntimeError("RL algorithm died, quitting train_gen_by_batch")
           continue
         else:
-          continue
-
-        yield item
-        q.task_done()  # Unblock `callback` or `job` after item is consumed.
-        if item is job_finished:
-          break
+          yield item
+          q.task_done()  # Unblock `callback` or `job` after item is consumed.
+          if item is job_finished:
+            break
 
       t.join(timeout=1)
       assert not t.is_alive()
