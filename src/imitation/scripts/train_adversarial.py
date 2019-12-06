@@ -161,16 +161,14 @@ def train(_run,
       for epoch in tqdm.tqdm(range(1, n_epochs+1), desc="epoch"):
         trainer.train_disc(trainer.batch_size)
         if visualizer:
-          visualizer.add_data_disc_loss(False)
+          visualizer.add_data_disc_loss(False, epoch)
         train_gen()
         if visualizer:
-          visualizer.add_data_disc_loss(True)
+          visualizer.add_data_disc_loss(True, epoch)
 
         if visualizer and epoch % plot_interval == 0:
           visualizer.plot_disc_loss()
-          visualizer.add_data_ep_reward(trainer.venv, "Ground Truth Reward")
-          visualizer.add_data_ep_reward(trainer.venv_train, "Train Reward")
-          visualizer.add_data_ep_reward(trainer.venv_test, "Test Reward")
+          visualizer.add_data_ep_reward(epoch)
           visualizer.plot_ep_reward()
 
         if checkpoint_interval > 0 and epoch % checkpoint_interval == 0:
