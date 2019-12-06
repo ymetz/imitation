@@ -166,9 +166,17 @@ def train(_run,
         if visualizer:
           visualizer.add_data_disc_loss(True, epoch)
 
-        if visualizer and epoch % plot_interval == 0:
+      if visualizer:
+        visualizer.add_data_disc_loss(True, epoch)
+
+        if (extra_episode_data_interval > 0
+            and epoch % extra_episode_data_interval == 0):  # noqa: E129
+          visualizer.add_data_ep_reward(epoch)
+
+        if plot_interval > 0 and epoch % plot_interval == 0:
           visualizer.plot_disc_loss()
           visualizer.add_data_ep_reward(epoch)
+          # Add episode mean rewards only at plot time because it is expensive.
           visualizer.plot_ep_reward()
 
         if checkpoint_interval > 0 and epoch % checkpoint_interval == 0:

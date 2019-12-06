@@ -262,6 +262,7 @@ class AdversarialTrainer:
           if not t.is_alive():
             # Kill the main thread too (otherwise we hang).
             raise RuntimeError("RL algorithm died, quitting train_gen_by_batch")
+          continue
         else:
           continue
 
