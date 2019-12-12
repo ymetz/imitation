@@ -27,8 +27,8 @@ def train_defaults():
 
   # Number of epochs in between plots (<0 disables) (=0 means final plot only)
   plot_interval = -1
-
   n_plot_episodes = 5  # Number of rollouts for each mean_ep_rew data
+
   # Interval for extra episode rew data. (<=0 disables)
   extra_episode_data_interval = -1
   show_plots = True  # Show plots in addition to saving them
