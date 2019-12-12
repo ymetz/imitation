@@ -188,7 +188,7 @@ class AdversarialTrainer:
     # It should work, but might incur unnecessary overhead: e.g. in PPO2
     # a new Runner instance is created each time. Also a hotspot for errors:
     # algorithms not tested for this use case, may reset state accidentally.
-    self.gen_policy.learn(total_timesteps=self.batch_size,
+    self.gen_policy.learn(total_timesteps=self.batch_size_norm,
                           reset_num_timesteps=False,
                           callback=callback)
     self._populate_gen_replay_buffer()
