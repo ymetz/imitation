@@ -47,7 +47,10 @@ setup(
         'tqdm',
         'scikit-learn>=0.21.2',
         # TODO(adam): Change to >=2.10.0 once 2.10.0 released
-        'stable-baselines @ git+https://github.com/hill-a/stable-baselines.git',
+        # TODO(shwang): This is a temporary pointer to my Runner-`reset`
+        # bug fix branch.
+        ('stable-baselines @ '
+         'git+https://github.com/shwang/baselines@fix_low_timesteps_learn'),
         # TODO(shwang): Change to PyPI release once >0.1.55 is released.
         # Needs https://github.com/google/jax/pull/1931
         'jax @ git+https://github.com/google/jax',
