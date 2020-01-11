@@ -50,7 +50,7 @@ setup(
         # TODO(shwang): This is a temporary pointer to my Runner-`reset`
         # bug fix branch.
         ('stable-baselines @ '
-         'git+https://github.com/shwang/baselines@fix_low_timesteps_learn'),
+         'git+https://github.com/shwang/baselines@hp_tune_temp'),
         # TODO(shwang): Change to PyPI release once >0.1.55 is released.
         # Needs https://github.com/google/jax/pull/1931
         'jax @ git+https://github.com/google/jax',
