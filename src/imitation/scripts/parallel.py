@@ -170,7 +170,7 @@ def _ray_tune_sacred_wrapper(
 
 
 def main_console():
-    observer = FileStorageObserver(os.path.join("output", "sacred", "parallel"))
+    observer = FileStorageObserver.create(os.path.join("output", "sacred", "parallel"))
     parallel_ex.observers.append(observer)
     parallel_ex.run_commandline()
 
