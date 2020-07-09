@@ -237,10 +237,26 @@ def test_parallel(config_updates):
 def _generate_test_rollouts(tmpdir: str, env_named_config: str) -> str:
     expert_demos.expert_demos_ex.run(
         named_configs=[env_named_config, "fast"],
-        config_updates=dict(rollout_save_interval=0, log_dir=tmpdir,),
+        config_updates=dict(parallel=False,
+                            rollout_save_interval=-1,
+                            rollout_save_final=True,
+                            log_dir=tmpdir,
+                            n_episodes_eval=1),
     )
     rollout_path = osp.abspath(f"{tmpdir}/rollouts/final.pkl")
     return rollout_path
+
+
+def test_train_adversarial_custom_env(tmpdir):
+    env_named_config = "custom_ant"
+    rollout_path = _generate_test_rollouts(tmpdir, env_named_config)
+
+    run = train_adversarial.train_ex.run(
+        named_configs=["custom_ant", "fast"],
+        config_updates=dict(num_vec=2, rollout_path=rollout_path,
+                            ),
+    )
+    assert run.status == "COMPLETED"
 
 
 def test_parallel_train_adversarial_custom_env(tmpdir):
@@ -251,7 +267,7 @@ def test_parallel_train_adversarial_custom_env(tmpdir):
         sacred_ex_name="train_adversarial",
         n_seeds=1,
         base_named_configs=[env_named_config, "fast"],
-        base_config_updates=dict(parallel=True, num_vec=2, rollout_path=rollout_path,),
+        base_config_updates=dict(num_vec=2, rollout_path=rollout_path,),
     )
     config_updates.update(PARALLEL_CONFIG_LOW_RESOURCE)
     run = parallel.parallel_ex.run(
