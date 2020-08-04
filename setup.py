@@ -56,7 +56,6 @@ setup(
         "stable-baselines3 @ git+https://github.com/DLR-RM/stable-baselines3.git",
         # "stable-baselines3~=0.8.0a2",
         "jax~=0.1.66",
-        "jaxlib~=0.1.47",
         "sacred~=0.8.1",
         "tensorboard>=1.14",
     ],
