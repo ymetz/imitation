@@ -1,6 +1,4 @@
 """Load serialized policies of different types."""
-# TODO(scottemmons): Only import packages and modules to adhere to style guide:
-#  https://google.github.io/styleguide/pyguide.html#22-imports
 
 # FIXME(sam): it seems like this module could mostly be replaced with a few
 # torch.load() and torch.save() calls
@@ -12,20 +10,18 @@ from typing import Callable, Optional, Tuple, Type, Union
 
 import numpy as np
 import torch as th
-from stable_baselines3.common.base_class import BaseAlgorithm
-from stable_baselines3.common.policies import BasePolicy
-from stable_baselines3.common.vec_env import VecEnv, VecNormalize
+from stable_baselines3.common import callbacks, on_policy_algorithm, policies, vec_env
 from torch import nn
 
-from imitation.policies.base import RandomPolicy, ZeroPolicy
+from imitation.policies import base
 from imitation.util import registry
 
-PolicyLoaderFn = Callable[[str, VecEnv], BasePolicy]
+PolicyLoaderFn = Callable[[str, vec_env.VecEnv], policies.BasePolicy]
 
 policy_registry: registry.Registry[PolicyLoaderFn] = registry.Registry()
 
 
-class NormalizePolicy(BasePolicy):
+class NormalizePolicy(policies.BasePolicy):
     """Wraps a policy, normalizing its input observations.
 
     `VecNormalize` normalizes observations to have zero mean and unit standard
@@ -38,11 +34,12 @@ class NormalizePolicy(BasePolicy):
     trick will not work for fine-tuning / training policies.
     """
 
-    def __init__(self, policy: BasePolicy, vec_normalize: VecNormalize):
+    def __init__(
+        self, policy: policies.BasePolicy, vec_normalize: vec_env.VecNormalize
+    ):
         super().__init__(
             observation_space=policy.observation_space,
             action_space=policy.action_space,
-            device=policy.device,
         )
         self._policy = policy
         self.vec_normalize = vec_normalize
@@ -80,7 +77,9 @@ class NormalizePolicy(BasePolicy):
         raise NotImplementedError()
 
     @classmethod
-    def load(cls, path: str, device: Union[th.device, str] = "auto") -> BasePolicy:
+    def load(
+        cls, path: str, device: Union[th.device, str] = "auto"
+    ) -> policies.BasePolicy:
         raise NotImplementedError()
 
     def load_from_vector(self, vector: np.ndarray):
@@ -91,7 +90,7 @@ class NormalizePolicy(BasePolicy):
 
 
 def _load_stable_baselines(
-    cls: Type[BaseAlgorithm], policy_attr: str
+    cls: Type[on_policy_algorithm.OnPolicyAlgorithm], policy_attr: str
 ) -> PolicyLoaderFn:
     """Higher-order function, returning a policy loading function.
 
@@ -104,7 +103,7 @@ def _load_stable_baselines(
         A function loading policies trained via cls.
     """
 
-    def f(path: str, venv: VecEnv) -> BasePolicy:
+    def f(path: str, venv: vec_env.VecEnv) -> policies.BasePolicy:
         """Loads a policy saved to path, for environment env."""
         logging.info(f"Loading Stable Baselines policy for '{cls}' from '{path}'")
         model_path = os.path.join(path, "model.pkl")
@@ -131,11 +130,11 @@ def _load_stable_baselines(
 
 policy_registry.register(
     "random",
-    value=registry.build_loader_fn_require_space(RandomPolicy),
+    value=registry.build_loader_fn_require_space(base.RandomPolicy),
 )
 policy_registry.register(
     "zero",
-    value=registry.build_loader_fn_require_space(ZeroPolicy),
+    value=registry.build_loader_fn_require_space(base.ZeroPolicy),
 )
 
 
@@ -152,7 +151,9 @@ STABLE_BASELINES_CLASSES = {
 _add_stable_baselines_policies(STABLE_BASELINES_CLASSES)
 
 
-def load_policy(policy_type: str, policy_path: str, venv: VecEnv) -> BasePolicy:
+def load_policy(
+    policy_type: str, policy_path: str, venv: vec_env.VecEnv
+) -> policies.BasePolicy:
     """Load serialized policy.
 
     Args:
@@ -166,16 +167,16 @@ def load_policy(policy_type: str, policy_path: str, venv: VecEnv) -> BasePolicy:
 
 def save_stable_model(
     output_dir: str,
-    model: BaseAlgorithm,
-    vec_normalize: Optional[VecNormalize] = None,
+    model: on_policy_algorithm.OnPolicyAlgorithm,
+    vec_normalize: Optional[vec_env.VecNormalize] = None,
 ) -> None:
-    """Serialize policy.
+    """Serialize Stable Baselines model.
 
     Load later with `load_policy(..., policy_path=output_dir)`.
 
     Args:
         output_dir: Path to the save directory.
-        policy: The stable baselines policy.
+        model: The stable baselines model.
         vec_normalize: Optionally, a VecNormalize to save statistics for.
             `load_policy` automatically applies `NormalizePolicy` wrapper
             when loading.
@@ -186,3 +187,32 @@ def save_stable_model(
         with open(os.path.join(output_dir, "vec_normalize.pkl"), "wb") as f:
             pickle.dump(vec_normalize, f)
     logging.info("Saved policy to %s", output_dir)
+
+
+class SavePolicyCallback(callbacks.EventCallback):
+    """Saves the policy using `save_stable_model` each time it is called.
+
+    Should be used in conjunction with `callbacks.EveryNTimesteps`
+    or another event-based trigger.
+    """
+
+    def __init__(
+        self,
+        policy_dir: str,
+        vec_normalize: Optional[vec_env.VecNormalize],
+        *args,
+        **kwargs,
+    ):
+        """Builds SavePolicyCallback.
+
+        Args:
+            policy_dir: Directory to save checkpoints.
+            vec_normalize: If specified, VecNormalize object to save alongside policy.
+        """
+        super().__init__(*args, **kwargs)
+        self.policy_dir = policy_dir
+        self.vec_normalize = vec_normalize
+
+    def _on_step(self) -> bool:
+        output_dir = os.path.join(self.policy_dir, f"{self.num_timesteps:012d}")
+        save_stable_model(output_dir, self.model, self.vec_normalize)

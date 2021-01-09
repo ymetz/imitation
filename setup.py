@@ -3,7 +3,7 @@ from setuptools import find_packages, setup
 import src.imitation  # pytype: disable=import-error
 
 TESTS_REQUIRE = [
-    "seals~=0.1.0",
+    "seals>=0.1.1",
     "black",
     # remove pin once https://github.com/nedbat/coveragepy/issues/881 fixed
     "coverage==4.5.4",
@@ -16,12 +16,14 @@ TESTS_REQUIRE = [
     "flake8-isort",
     "pytest",
     "pytest-cov",
-    "pytest-shard",
+    "pytest-notebook",
     "pytest-xdist",
     "pytype",
 ]
 DOCS_REQUIRE = [
     "sphinx",
+    "sphinx-autodoc-typehints",
+    "sphinx-rtd-theme",
     "sphinxcontrib-napoleon",
 ]
 PARALLEL_REQUIRE = ["ray[debug,tune]~=0.8.5"]
@@ -53,7 +55,7 @@ setup(
         "torch>=1.4.0",
         "tqdm",
         "scikit-learn>=0.21.2",
-        "stable-baselines3~=0.8.0",
+        "stable-baselines3~=0.10.0",
         "jax~=0.1.66",
         "sacred~=0.8.1",
         "tensorboard>=1.14",

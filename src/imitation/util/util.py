@@ -1,8 +1,18 @@
 import datetime
 import functools
+import itertools
 import os
 import uuid
-from typing import Optional, Type, Union
+from typing import (
+    Callable,
+    Iterable,
+    Iterator,
+    Optional,
+    Sequence,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import gym
 import numpy as np
@@ -31,6 +41,7 @@ def make_vec_env(
     parallel: bool = False,
     log_dir: Optional[str] = None,
     max_episode_steps: Optional[int] = None,
+    post_wrappers: Optional[Sequence[Callable[[gym.Env, int], gym.Env]]] = None,
 ) -> VecEnv:
     """Returns a VecEnv initialized with `n_envs` Envs.
 
@@ -46,6 +57,10 @@ def make_vec_env(
             `max_episode_steps` for every TimeLimit wrapper (this automatic
             wrapper is the default behavior when calling `gym.make`). Otherwise
             the environments are passed into the VecEnv unwrapped.
+        post_wrappers: If specified, iteratively wraps each environment with each
+            of the wrappers specified in the sequence. The argument should be a Callable
+            accepting two arguments, the Env to be wrapped and the environment index,
+            and returning the wrapped Env.
     """
     # Resolve the spec outside of the subprocess first, so that it is available to
     # subprocesses running `make_env` via automatic pickling.
@@ -82,6 +97,11 @@ def make_vec_env(
 
         env = monitor.Monitor(env, log_path)
         env = wrappers.RolloutInfoWrapper(env)
+
+        if post_wrappers:
+            for wrapper in post_wrappers:
+                env = wrapper(env, i)
+
         return env
 
     rng = np.random.RandomState(seed)
@@ -135,3 +155,31 @@ def docstring_parameter(*args, **kwargs):
         return obj
 
     return helper
+
+
+T = TypeVar("T")
+
+
+def endless_iter(iterable: Iterable[T]) -> Iterator[T]:
+    """Generator that endlessly yields elements from iterable.
+
+    If any call to `iter(iterable)` has no elements, then this function raises
+    ValueError.
+
+    >>> x = range(2)
+    >>> it = endless_iter(x)
+    >>> next(it)
+    0
+    >>> next(it)
+    1
+    >>> next(it)
+    0
+
+    """
+    try:
+        next(iter(iterable))
+    except StopIteration:
+        err = ValueError(f"iterable {iterable} had no elements to iterate over.")
+        raise err
+
+    return itertools.chain.from_iterable(itertools.repeat(iterable))

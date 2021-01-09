@@ -69,7 +69,6 @@ def test_expert_demos_rollouts_from_policy(tmpdir):
         config_updates=dict(
             log_root=tmpdir,
             rollout_save_path=osp.join(tmpdir, "rollouts", "test.pkl"),
-            rollout_save_interval=1,
             policy_path="tests/data/expert_models/cartpole_0/policies/final/",
         ),
     )
@@ -77,7 +76,8 @@ def test_expert_demos_rollouts_from_policy(tmpdir):
 
 
 EVAL_POLICY_CONFIGS = [
-    {},
+    {"videos": True},
+    {"videos": True, "video_kwargs": {"single_video": False}},
     {"reward_type": "zero", "reward_path": "foobar"},
 ]
 
@@ -86,7 +86,6 @@ EVAL_POLICY_CONFIGS = [
 def test_eval_policy(config, tmpdir):
     """Smoke test for imitation.scripts.eval_policy."""
     config_updates = {
-        "render": False,
         "log_root": tmpdir,
     }
     config_updates.update(config)
@@ -322,7 +321,6 @@ def _generate_test_rollouts(tmpdir: str, env_named_config: str) -> str:
     expert_demos.expert_demos_ex.run(
         named_configs=[env_named_config, "fast"],
         config_updates=dict(
-            rollout_save_interval=0,
             log_dir=tmpdir,
         ),
     )
