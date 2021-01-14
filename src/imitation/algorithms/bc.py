@@ -192,7 +192,7 @@ class BC:
         self,
         n_epochs: int = 100,
         *,
-        on_epoch_end: Callable[[dict], None] = None,
+        callback: Callable[[dict], None] = None,
         log_interval: int = 100,
     ):
         """Train with supervised learning for some number of epochs.
@@ -210,6 +210,11 @@ class BC:
         assert self.batch_size >= 1
         samples_so_far = 0
         batch_num = 0
+
+        # Run Callback once before training to get initial loss values
+        if callback is not None:
+            callback(samples_so_far, self.policy, locals(), stats_dict={'loss': 0.0, 'batch_size': self.batch_size})
+
         for epoch_num in trange(n_epochs, desc="BC epoch"):
             while samples_so_far < (epoch_num + 1) * self.expert_dataset.size():
                 batch_num += 1
@@ -233,8 +238,9 @@ class BC:
                         logger.record(k, v)
                     logger.dump(batch_num)
 
-            if on_epoch_end is not None:
-                on_epoch_end(locals())
+                if callback is not None:
+                    callback(samples_so_far, self.policy, locals(), stats_dict={'loss': loss.cpu().item(),
+                                                                                'batch_size': self.batch_size})
 
     def save_policy(self, policy_path: str) -> None:
         """Save policy to a path. Can be reloaded by `.reconstruct_policy()`.

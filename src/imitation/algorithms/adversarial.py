@@ -322,8 +322,8 @@ class AdversarialTrainer:
         for epoch in tqdm.tqdm(range(0, n_epochs), desc="epoch"):
             self.train_gen(self.gen_batch_size)
             self.train_disc(self.disc_batch_size)
-            if callback:
-                callback(epoch)
+            if callback is not None:
+                callback(epoch * self.gen_batch_size, self.gen_algo.policy, locals(), stats_dict=train_stats)
             logger.dump(self._global_step)
 
     def _torchify_array(self, ndarray: np.ndarray, **kwargs) -> th.Tensor:
