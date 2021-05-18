@@ -54,6 +54,8 @@ setup(
         "numpy>=1.15",
         "torch>=1.4.0",
         "tqdm",
+        "stable-baselines3~=1.0",
+        "jax~=0.2.8",
         "scikit-learn>=0.21.2",
         "sacred~=0.8.1",
         "tensorboard>=1.14",
