@@ -157,6 +157,7 @@ class BC:
         expert_data: Union[Iterable[Mapping], types.TransitionsMinimal, None] = None,
         optimizer_cls: Type[th.optim.Optimizer] = th.optim.Adam,
         optimizer_kwargs: Optional[Dict[str, Any]] = None,
+        learning_rate: float = 1e-3,
         ent_weight: float = 1e-3,
         l2_weight: float = 0.0,
         device: Union[str, th.device] = "auto",
@@ -192,7 +193,7 @@ class BC:
         self.policy_kwargs = dict(
             observation_space=self.observation_space,
             action_space=self.action_space,
-            lr_schedule=ConstantLRSchedule(),
+            lr_schedule=ConstantLRSchedule(learning_rate),
         )
         self.policy_kwargs.update(policy_kwargs or {})
         self.device = utils.get_device(device)
