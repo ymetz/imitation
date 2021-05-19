@@ -158,6 +158,7 @@ class BC:
         optimizer_cls: Type[th.optim.Optimizer] = th.optim.Adam,
         optimizer_kwargs: Optional[Dict[str, Any]] = None,
         learning_rate: float = 1e-3,
+        batch_size: int = DEFAULT_BATCH_SIZE,
         ent_weight: float = 1e-3,
         l2_weight: float = 0.0,
         device: Union[str, th.device] = "auto",
@@ -233,7 +234,7 @@ class BC:
             self.expert_data_loader = th_data.DataLoader(
                 expert_data,
                 shuffle=True,
-                batch_size=BC.DEFAULT_BATCH_SIZE,
+                batch_size=batch_size,
                 collate_fn=types.transitions_collate_fn,
             )
         else:
