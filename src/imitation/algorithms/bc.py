@@ -292,7 +292,7 @@ class BC:
         *,
         n_epochs: Optional[int] = None,
         n_batches: Optional[int] = None,
-        on_epoch_end: Callable[[], None] = None,
+        callback: Callable[[], None] = None,
         log_interval: int = 100,
     ):
         """Train with supervised learning for some number of epochs.
@@ -313,7 +313,7 @@ class BC:
             self.expert_data_loader,
             n_epochs=n_epochs,
             n_batches=n_batches,
-            on_epoch_end=on_epoch_end,
+            on_epoch_end=callback,
         )
 
         batch_num = 0
