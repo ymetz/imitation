@@ -57,9 +57,8 @@ class EpochOrBatchIteratorWithProgress:
     def __init__(
         self,
         data_loader: Iterable[dict],
-        n_epochs: Optional[int] = None,
-        n_batches: Optional[int] = None,
-        on_epoch_end: Optional[Callable[[], None]] = None,
+        total_timesteps: int,
+        callback: Optional[Callable[[], None]] = None,
     ):
         """Wraps DataLoader so that all BC batches can be processed in a one for-loop.
 
@@ -74,19 +73,10 @@ class EpochOrBatchIteratorWithProgress:
             on_epoch_end: A callback function without parameters to be called at the
                 end of every epoch.
         """
-        if n_epochs is not None and n_batches is None:
-            self.use_epochs = True
-        elif n_epochs is None and n_batches is not None:
-            self.use_epochs = False
-        else:
-            raise ValueError(
-                "Must provide exactly one of `n_epochs` and `n_batches` arguments."
-            )
 
         self.data_loader = data_loader
-        self.n_epochs = n_epochs
-        self.n_batches = n_batches
-        self.on_epoch_end = on_epoch_end
+        self.total_timesteps = total_timesteps
+        self.callback = callback
 
     def __iter__(self) -> Iterable[Tuple[dict, dict]]:
         """Yields batches while updating tqdm display to display progress."""
@@ -94,18 +84,6 @@ class EpochOrBatchIteratorWithProgress:
         samples_so_far = 0
         epoch_num = 0
         batch_num = 0
-        batch_suffix = epoch_suffix = ""
-        if self.use_epochs:
-            display = tqdm.tqdm(total=self.n_epochs)
-            epoch_suffix = f"/{self.n_epochs}"
-        else:  # Use batches.
-            display = tqdm.tqdm(total=self.n_batches)
-            batch_suffix = f"/{self.n_batches}"
-
-        def update_desc():
-            display.set_description(
-                f"batch: {batch_num}{batch_suffix}  epoch: {epoch_num}{epoch_suffix}"
-            )
 
         with contextlib.closing(display):
             while True:
@@ -121,20 +99,11 @@ class EpochOrBatchIteratorWithProgress:
                         samples_so_far=samples_so_far,
                     )
                     yield batch, stats
-                    if not self.use_epochs:
-                        update_desc()
-                        display.update(1)
-                        if batch_num >= self.n_batches:
-                            return
-                epoch_num += 1
-                if self.on_epoch_end is not None:
-                    self.on_epoch_end()
+                if self.callback is not None:
+                    self.callback()
 
-                if self.use_epochs:
-                    update_desc()
-                    display.update(1)
-                    if epoch_num >= self.n_epochs:
-                        return
+                if samples_so_far >= self.total_timesteps:
+                    return
 
 
 class BC:
@@ -290,8 +259,7 @@ class BC:
     def train(
         self,
         *,
-        n_epochs: Optional[int] = None,
-        n_batches: Optional[int] = None,
+        total_timesteps,
         callback: Callable[[], None] = None,
         log_interval: int = 100,
     ):
