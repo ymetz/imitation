@@ -331,7 +331,7 @@ class BC:
                 logger.dump(batch_num)
             batch_num += 1
 
-    def save_policy(self, policy_path: str) -> None:
+    def save(self, policy_path: str) -> None:
         """Save policy to a path. Can be reloaded by `.reconstruct_policy()`.
 
         Args:
