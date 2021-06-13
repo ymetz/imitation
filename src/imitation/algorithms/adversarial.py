@@ -425,6 +425,9 @@ class AdversarialTrainer:
         }
 
         return batch_dict
+    
+    def save(path, model_name):
+        th.save(self.gen_algo.policy.save(path, model_name))
 
 
 class GAIL(AdversarialTrainer):

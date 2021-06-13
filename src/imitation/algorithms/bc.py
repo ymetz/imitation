@@ -278,7 +278,7 @@ class BC:
         it = EpochOrBatchIteratorWithProgress(
             self.expert_data_loader,
             total_timesteps=total_timesteps,
-            callback=callback,
+            callback=callback
         )
 
         batch_num = 0
