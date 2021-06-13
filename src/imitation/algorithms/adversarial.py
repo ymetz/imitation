@@ -316,7 +316,7 @@ class AdversarialTrainer:
             for _ in range(self.n_disc_updates_per_round):
                 self.train_disc()
             if callback:
-                callback(epoch * self.gen_batch_size, self.gen_algo.policy, locals(), stats_dict=train_stats)
+                callback(r)
             logger.dump(self._global_step)
 
     def _torchify_array(self, ndarray: np.ndarray, **kwargs) -> th.Tensor:
@@ -426,8 +426,8 @@ class AdversarialTrainer:
 
         return batch_dict
     
-    def save(path, model_name):
-        th.save(self.gen_algo.policy.save(path, model_name))
+    def save(self, policy_path):
+        self.gen_algo.policy,save(policy_path)
 
 
 class GAIL(AdversarialTrainer):

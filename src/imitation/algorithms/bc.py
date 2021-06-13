@@ -56,9 +56,8 @@ class ConstantLRSchedule:
 class EpochOrBatchIteratorWithProgress:
     def __init__(
         self,
+        total_timesteps,
         data_loader: Iterable[dict],
-        total_timesteps: int,
-        callback: Optional[Callable[[], None]] = None,
     ):
         """Wraps DataLoader so that all BC batches can be processed in a one for-loop.
 
@@ -76,7 +75,6 @@ class EpochOrBatchIteratorWithProgress:
 
         self.data_loader = data_loader
         self.total_timesteps = total_timesteps
-        self.callback = callback
 
     def __iter__(self) -> Iterable[Tuple[dict, dict]]:
         """Yields batches while updating tqdm display to display progress."""
@@ -85,25 +83,22 @@ class EpochOrBatchIteratorWithProgress:
         epoch_num = 0
         batch_num = 0
 
-        with contextlib.closing(display):
-            while True:
-                update_desc()
-                for batch in self.data_loader:
-                    batch_num += 1
-                    batch_size = len(batch["obs"])
-                    assert batch_size > 0
-                    samples_so_far += batch_size
-                    stats = dict(
-                        epoch_num=epoch_num,
-                        batch_num=batch_num,
-                        samples_so_far=samples_so_far,
-                    )
-                    yield batch, stats
-                if self.callback is not None:
-                    self.callback()
 
-                if samples_so_far >= self.total_timesteps:
-                    return
+        while True:
+            for batch in self.data_loader:
+                batch_num += 1
+                batch_size = len(batch["obs"])
+                assert batch_size > 0
+                samples_so_far += batch_size
+                stats = dict(
+                    epoch_num=epoch_num,
+                    batch_num=batch_num,
+                    samples_so_far=samples_so_far,
+                )
+                yield batch, stats
+
+            if samples_so_far >= self.total_timesteps:
+                return
 
 
 class BC:
@@ -276,10 +271,10 @@ class BC:
             log_interval: Log stats after every log_interval batches.
         """
         it = EpochOrBatchIteratorWithProgress(
+            total_timesteps,
             self.expert_data_loader,
-            total_timesteps=total_timesteps,
-            callback=callback
         )
+        self.callback = callback
 
         batch_num = 0
         for batch, stats_dict_it in it:
@@ -288,6 +283,9 @@ class BC:
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
+
+            if self.callback is not None:
+                self.callback(stats_dict_it["samples_so_far"], self.policy, stats_dict_loss)
 
             if batch_num % log_interval == 0:
                 for stats in [stats_dict_it, stats_dict_loss]:
@@ -302,4 +300,4 @@ class BC:
         Args:
             policy_path: path to save policy to.
         """
-        th.save(self.policy, policy_path)
+        self.policy.save(policy_path)
