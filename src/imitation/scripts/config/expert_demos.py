@@ -25,12 +25,11 @@ def expert_demos_defaults():
     reward_type = None  # override reward type
     reward_path = None  # override reward path
 
-    rollout_save_interval = -1  # Num updates between saves (<=0 disables)
     rollout_save_final = True  # If True, save after training is finished.
     rollout_save_n_timesteps = None  # Min timesteps saved per file, optional.
     rollout_save_n_episodes = None  # Num episodes saved per file, optional.
 
-    policy_save_interval = 2000  # Num updates between saves (<=0 disables)
+    policy_save_interval = 10000  # Num timesteps between saves (<=0 disables)
     policy_save_final = True  # If True, save after training is finished.
 
     init_tensorboard = False  # If True, then write Tensorboard logs.
@@ -98,7 +97,9 @@ def hopper():
 @expert_demos_ex.named_config
 def humanoid():
     env_name = "Humanoid-v2"
-    init_rl_kwargs = dict(n_steps=2048,)  # batch size of 2048*8=16384 due to num_vec
+    init_rl_kwargs = dict(
+        n_steps=2048,
+    )  # batch size of 2048*8=16384 due to num_vec
     total_timesteps = int(10e6)  # fairly discontinuous, needs at least 5e6
 
 
@@ -160,7 +161,9 @@ def fast():
 # Shared settings
 
 ant_shared_locals = dict(
-    init_rl_kwargs=dict(n_steps=2048,),  # batch size of 2048*8=16384 due to num_vec
+    init_rl_kwargs=dict(
+        n_steps=2048,
+    ),  # batch size of 2048*8=16384 due to num_vec
     total_timesteps=int(5e6),
     max_episode_steps=500,  # To match `inverse_rl` settings.
 )

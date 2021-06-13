@@ -1,8 +1,9 @@
-import src.imitation  # pytype: disable=import-error
 from setuptools import find_packages, setup
 
+import src.imitation  # pytype: disable=import-error
+
 TESTS_REQUIRE = [
-    "seals~=0.1.0",
+    "seals>=0.1.1",
     "black",
     # remove pin once https://github.com/nedbat/coveragepy/issues/881 fixed
     "coverage==4.5.4",
@@ -15,12 +16,14 @@ TESTS_REQUIRE = [
     "flake8-isort",
     "pytest",
     "pytest-cov",
-    "pytest-shard",
+    "pytest-notebook",
     "pytest-xdist",
     "pytype",
 ]
 DOCS_REQUIRE = [
     "sphinx",
+    "sphinx-autodoc-typehints",
+    "sphinx-rtd-theme",
     "sphinxcontrib-napoleon",
 ]
 PARALLEL_REQUIRE = ["ray[debug,tune]~=0.8.5"]
@@ -52,9 +55,7 @@ setup(
         "torch>=1.4.0",
         "tqdm",
         "scikit-learn>=0.21.2",
-        # TODO(adam): switch to pip once release including commit 8353056 is made
-        "stable-baselines3 @ git+https://github.com/DLR-RM/stable-baselines3.git",
-        # "stable-baselines3~=0.8.0a2",
+        "stable-baselines3>=0.10.0",
         "jax~=0.1.66",
         "sacred~=0.8.1",
         "tensorboard>=1.14",
@@ -66,8 +67,7 @@ setup(
             "autopep8",
             "ntfy[slack]",
             "ipdb",
-            # isort 4.X required for flake8-isort (2020-07-07)
-            "isort~=4.0",
+            "isort~=5.0",
             "jupyter",
             "pytype",
             "codespell",
