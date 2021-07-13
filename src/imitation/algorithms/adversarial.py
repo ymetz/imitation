@@ -134,7 +134,7 @@ class AdversarialTrainer:
         if self.expert_data_loader is not None:
             self._endless_expert_iterator = util.endless_iter(self.expert_data_loader)
         else:
-            self._endless_expert_iterator = util.endless_iter(iter([]))
+            self._endless_expert_iterator = None
 
         self.debug_use_ground_truth = debug_use_ground_truth
         self.venv = venv
@@ -184,6 +184,10 @@ class AdversarialTrainer:
         self._gen_replay_buffer = buffer.ReplayBuffer(
             gen_replay_buffer_capacity, self.venv
         )
+
+    def set_expert_data_loader(self, data_loader):
+        self.expert_data_loader = data_loader
+        self._endless_expert_iterator = util.endless_iter(self.expert_data_loader)
 
     def _next_expert_batch(self) -> Mapping:
         return next(self._endless_expert_iterator)
