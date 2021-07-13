@@ -131,7 +131,10 @@ class AdversarialTrainer:
             )
         else:
             self.expert_data_loader = expert_data
-        self._endless_expert_iterator = util.endless_iter(self.expert_data_loader)
+        if self.expert_data_loader is not None:
+            self._endless_expert_iterator = util.endless_iter(self.expert_data_loader)
+        else:
+            self._endless_expert_iterator = util.endless_iter(iter([]))
 
         self.debug_use_ground_truth = debug_use_ground_truth
         self.venv = venv
