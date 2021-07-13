@@ -294,6 +294,7 @@ class DiscrimNetGAIL(DiscrimNet):
         action_space: gym.Space,
         discrim_net: Optional[nn.Module] = None,
         scale: bool = False,
+        hidden_sizes: list[int] = [32, 32]
     ):
         """Construct discriminator network.
 
@@ -313,7 +314,7 @@ class DiscrimNetGAIL(DiscrimNet):
             self.discriminator = ActObsMLP(
                 action_space=action_space,
                 observation_space=observation_space,
-                hid_sizes=(32, 32),
+                hid_sizes=hidden_sizes,
             )
         else:
             self.discriminator = discrim_net
